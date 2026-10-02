@@ -240,6 +240,7 @@ async function loadData() {
     showMsg("msgGlobal", "Não foi possível sincronizar. Usando o cache local.", false);
   }
   render();
+  setKitMode(novoKitMode);
 }
 
 async function registerItem() {
@@ -289,12 +290,58 @@ async function deleteMasterItem(id) {
   }
 }
 
+let novoKitMode = false;
+
+function setKitMode(novo) {
+  novoKitMode = Boolean(novo);
+
+  const existingWrap = $("kitExistenteWrap");
+  const newWrap = $("novoKitNomeWrap");
+  const toggle = $("novoKitToggle");
+  const action = $("kitAction");
+  const help = $("kitModeHelp");
+  const kitSelect = $("composicaoKit");
+  const itemSelect = $("composicaoItem");
+  const hasItems = getItems().length > 0;
+  const hasKits = getKits().length > 0;
+
+  if (novoKitMode && !hasItems) {
+    novoKitMode = false;
+    showMsg("msgKit", "Nenhum item cadastrado. Cadastre pelo menos um item antes de criar um kit.", false);
+  }
+
+  existingWrap.classList.toggle("hidden", novoKitMode);
+  newWrap.classList.toggle("hidden", !novoKitMode);
+
+  toggle.className = novoKitMode ? "primary" : "secondary";
+  toggle.textContent = novoKitMode ? "✓ Novo kit" : "＋ Novo kit";
+
+  action.textContent = novoKitMode ? "Cadastrar kit" : "Adicionar item";
+
+  if (novoKitMode) {
+    help.textContent = "Digite o nome do novo kit, selecione o primeiro item e informe a quantidade.";
+    kitSelect.disabled = true;
+    itemSelect.disabled = !hasItems;
+  } else {
+    help.textContent = hasKits
+      ? "Selecione um kit existente para adicionar um item à composição."
+      : "Nenhum kit cadastrado. Clique em “＋ Novo kit” para criar o primeiro.";
+    kitSelect.disabled = !hasKits;
+    itemSelect.disabled = !hasItems;
+  }
+}
+
 async function createKitWithFirstItem() {
   const nome = $("novoKitNome").value.trim();
-  const itemId = $("primeiroItemKit").value;
-  const quantidade = Number($("primeiraQtdKit").value);
+  const itemId = $("composicaoItem").value;
+  const quantidade = Number($("composicaoQtd").value);
+
+  if (!getItems().length)
+    return showMsg("msgKit", "Nenhum item cadastrado. Cadastre pelo menos um item antes de criar um kit.", false);
+
   if (!nome || !itemId || !Number.isFinite(quantidade) || quantidade <= 0)
-    return showMsg("msgKit", "Informe kit, primeiro item e quantidade válida.", false);
+    return showMsg("msgKit", "Informe o nome do novo kit, selecione o primeiro item e informe uma quantidade válida.", false);
+
   try {
     const { data, error } = await supabase.rpc("create_kit_with_item", {
       p_nome: nome,
@@ -302,15 +349,21 @@ async function createKitWithFirstItem() {
       p_quantidade: quantidade
     });
     if (error) throw error;
+
     const kit = data;
     state.kits.push(kit);
+
     const remote = await db.fetchKitItemsForKit(supabase, kit.id);
     state.kit_items.push(...remote);
+
     await local.put("kits", kit);
     for (const row of remote) await local.put("kit_items", row);
+
     $("novoKitNome").value = "";
-    $("primeiraQtdKit").value = "1";
+    $("composicaoQtd").value = "1";
+    setKitMode(false);
     render();
+    $("composicaoKit").value = kit.id;
     showMsg("msgKit", "Kit cadastrado com o primeiro item.");
   } catch (e) {
     showMsg("msgKit", e.message || "Erro ao cadastrar kit.", false);
@@ -321,10 +374,13 @@ async function addItemToKit() {
   const kitId = $("composicaoKit").value;
   const itemId = $("composicaoItem").value;
   const quantidade = Number($("composicaoQtd").value);
+
   if (!kitId || !itemId || !Number.isFinite(quantidade) || quantidade <= 0)
-    return showMsg("msgKit", "Selecione kit, item e uma quantidade válida.", false);
+    return showMsg("msgKit", "Selecione um kit, um item e uma quantidade válida.", false);
+
   if (state.kit_items.some(x => x.kit_id === kitId && x.item_id === itemId))
     return showMsg("msgKit", "Esse item já está na composição do kit. Exclua o registro atual antes de cadastrar novamente.", false);
+
   try {
     const row = await db.insertRemote(supabase, "kit_items", {
       kit_id: kitId, item_id: itemId, quantidade, created_by:user.id
@@ -538,13 +594,14 @@ async function init() {
     $("logoutBtn").onclick = () => auth.logout().catch(e => showMsg("msgGlobal", e.message, false));
     $("tipoVenda").onchange = renderProductSelect;
     $("addItem").onclick = registerItem;
-    $("createKit").onclick = createKitWithFirstItem;
-    $("addComposicao").onclick = addItemToKit;
+    $("novoKitToggle").onclick = () => setKitMode(!novoKitMode);
+    $("kitAction").onclick = () => novoKitMode ? createKitWithFirstItem() : addItemToKit;
     $("addVenda").onclick = registerSale;
     $("limparVendas").onclick = clearSales;
     $("sincronizar").onclick = syncNow;
     $("exportar").onclick = exportBackup;
     $("importar").onchange = e => importBackup(e.target.files[0]);
+    setKitMode(false);
 
     document.querySelectorAll(".tab").forEach(b => b.onclick = () => showTab(b.dataset.tab));
     $("listaItens").addEventListener("click", e => {
