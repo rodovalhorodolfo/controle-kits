@@ -59,24 +59,38 @@
     <section id="kits" class="panel">
       <h2>Kits e composição</h2>
       <div class="card">
-        <h3>Novo kit</h3>
-        <p class="muted">O kit já é criado com seu primeiro item. Assim não existe kit vazio pela operação normal.</p>
+        <div class="actions" style="margin-bottom:12px">
+          <button id="novoKitToggle" class="secondary">＋ Novo kit</button>
+        </div>
+        <p id="kitModeHelp" class="muted">Selecione um kit existente para adicionar um item à composição.</p>
+
         <div class="grid">
-          <div><label for="novoKitNome">Nome do kit</label><input id="novoKitNome" placeholder="Ex.: Kit 1 combinada"></div>
-          <div><label for="primeiroItemKit">Primeiro item</label><select id="primeiroItemKit"></select></div>
-          <div><label for="primeiraQtdKit">Quantidade</label><input id="primeiraQtdKit" type="number" min="0.001" step="0.001" value="1"></div>
-          <div class="end"><button id="createKit" class="primary wide">Cadastrar kit</button></div>
+          <div id="kitExistenteWrap">
+            <label for="composicaoKit">Kit</label>
+            <select id="composicaoKit"></select>
+          </div>
+
+          <div id="novoKitNomeWrap" class="hidden">
+            <label for="novoKitNome">Nome do novo kit</label>
+            <input id="novoKitNome" placeholder="Ex.: Kit 3 combinada">
+          </div>
+
+          <div>
+            <label for="composicaoItem">Item</label>
+            <select id="composicaoItem"></select>
+          </div>
+
+          <div>
+            <label for="composicaoQtd">Quantidade no kit</label>
+            <input id="composicaoQtd" type="number" min="0.001" step="0.001" value="1">
+          </div>
+
+          <div class="end">
+            <button id="kitAction" class="primary wide">Adicionar item</button>
+          </div>
         </div>
       </div>
-      <div class="card" style="margin-top:12px">
-        <h3>Adicionar item a um kit</h3>
-        <div class="grid">
-          <div><label for="composicaoKit">Kit</label><select id="composicaoKit"></select></div>
-          <div><label for="composicaoItem">Item</label><select id="composicaoItem"></select></div>
-          <div><label for="composicaoQtd">Quantidade no kit</label><input id="composicaoQtd" type="number" min="0.001" step="0.001" value="1"></div>
-          <div class="end"><button id="addComposicao" class="primary wide">Adicionar item</button></div>
-        </div>
-      </div>
+
       <div id="msgKit" class="msg"></div>
       <h3 style="margin-top:20px">Kits cadastrados</h3>
       <div id="listaKits"></div>
