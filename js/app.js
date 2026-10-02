@@ -7,7 +7,7 @@ import { syncFromServer } from "./sync.js";
 let supabase;
 let auth;
 let user = null;
-let state = { kits: [], kit_items: [], sales: [] };
+let state = { items: [], kits: [], kit_items: [], sales: [] };
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, m => ({
@@ -26,50 +26,81 @@ function showMsg(id, text, ok=true) {
   e.textContent = text;
   e.className = "msg " + (ok ? "ok" : "err");
   clearTimeout(e._timer);
-  e._timer = setTimeout(() => e.className = "msg", 3500);
+  e._timer = setTimeout(() => e.className = "msg", 4000);
 }
 
 function setOnlineStatus() {
-  $("offlineBanner").classList.toggle("hidden", navigator.onLine);
+  const banner = $("offlineBanner");
+  if (banner) banner.classList.toggle("hidden", navigator.onLine);
 }
 
 function renderLogin(authorized = false, checking = false) {
   const logged = !!user;
   const canUseApp = logged && authorized && !checking;
-
-  // A sessão Google, sozinha, não libera a interface operacional.
   $("loginPanel").classList.toggle("hidden", canUseApp);
   $("app").classList.toggle("hidden", !canUseApp);
   $("loginBtn").classList.toggle("hidden", logged || checking);
   $("loginBtn2").classList.toggle("hidden", logged || checking);
   $("logoutBtn").classList.toggle("hidden", !logged);
   $("userEmail").textContent = logged ? user.email : "";
-
-  if (checking) {
-    showMsg("msgGlobal", "Verificando autorização...", true);
-  }
-}
-
-function kitRows() {
-  return state.kit_items.filter(x => x.kit_id && state.kits.some(k => k.id === x.kit_id));
-}
-
-function getKits() {
-  return [...state.kits].filter(k => k.ativo !== false).sort((a,b) => a.nome.localeCompare(b.nome, "pt-BR"));
+  if (checking) showMsg("msgGlobal", "Verificando autorização...", true);
 }
 
 function getItems() {
-  return [...new Set(kitRows().map(x => x.item.trim()).filter(Boolean))].sort((a,b) => a.localeCompare(b, "pt-BR"));
+  return [...state.items].filter(x => x.ativo !== false)
+    .sort((a,b) => a.nome.localeCompare(b.nome, "pt-BR"));
+}
+
+function getAllItems() {
+  return [...state.items].sort((a,b) => a.nome.localeCompare(b.nome, "pt-BR"));
+}
+
+function getKits() {
+  return [...state.kits].filter(k => k.ativo !== false)
+    .sort((a,b) => a.nome.localeCompare(b.nome, "pt-BR"));
 }
 
 function compositionForKit(kitId) {
-  return kitRows().filter(x => x.kit_id === kitId);
+  return state.kit_items
+    .filter(x => x.kit_id === kitId)
+    .map(x => ({
+      ...x,
+      itemObj: state.items.find(i => i.id === x.item_id)
+    }))
+    .filter(x => x.itemObj);
+}
+
+function renderItemSelects() {
+  const active = getItems();
+  const options = active.length
+    ? active.map(i => `<option value="${esc(i.id)}">${esc(i.nome)}</option>`).join("")
+    : `<option value="">Nenhum item cadastrado</option>`;
+
+  for (const id of ["primeiroItemKit", "composicaoItem"]) {
+    const el = $(id);
+    if (!el) continue;
+    const old = el.value;
+    el.innerHTML = options;
+    if (active.some(i => i.id === old)) el.value = old;
+  }
+}
+
+function renderKitSelect() {
+  const kits = getKits();
+  const el = $("composicaoKit");
+  if (!el) return;
+  const old = el.value;
+  el.innerHTML = kits.length
+    ? kits.map(k => `<option value="${esc(k.id)}">${esc(k.nome)}</option>`).join("")
+    : `<option value="">Nenhum kit cadastrado</option>`;
+  if (kits.some(k => k.id === old)) el.value = old;
 }
 
 function renderProductSelect() {
   const tipo = $("tipoVenda").value;
-  const arr = tipo === "kit" ? getKits().map(k => ({id:k.id, name:k.nome})) :
-    getItems().map(x => ({id:x, name:x}));
+  const arr = tipo === "kit"
+    ? getKits().map(k => ({id:k.id, name:k.nome}))
+    : getItems().map(i => ({id:i.id, name:i.nome}));
   $("produtoVenda").innerHTML = arr.length
     ? arr.map(x => `<option value="${esc(x.id)}">${esc(x.name)}</option>`).join("")
     : `<option value="">Nenhum cadastrado</option>`;
@@ -86,13 +117,18 @@ function consolidation() {
     }
     const comp = Array.isArray(v.composicao) ? v.composicao : [];
     for (const row of comp) {
-      const item = row.item;
+      const item = String(row.item || "").trim();
+      if (!item) continue;
       inside[item] = (inside[item] || 0) + q * Number(row.quantidade || 0);
     }
   }
-  const items = [...new Set([...getItems(), ...Object.keys(direct), ...Object.keys(inside)])]
-    .sort((a,b) => a.localeCompare(b, "pt-BR"));
-  return items.map(item => ({
+  const names = [...new Set([
+    ...getAllItems().map(i => i.nome),
+    ...Object.keys(direct),
+    ...Object.keys(inside)
+  ])].sort((a,b) => a.localeCompare(b, "pt-BR"));
+
+  return names.map(item => ({
     item,
     direct: direct[item] || 0,
     inside: inside[item] || 0,
@@ -100,22 +136,43 @@ function consolidation() {
   }));
 }
 
-function render() {
-  renderProductSelect();
+function renderItems() {
+  const rows = getAllItems().map(i => `
+    <tr>
+      <td>${esc(i.nome)}</td>
+      <td>${i.ativo ? "Ativo" : "Inativo"}</td>
+      <td>
+        <button class="secondary" data-toggle-item="${esc(i.id)}">${i.ativo ? "Inativar" : "Reativar"}</button>
+        <button class="danger" data-delete-item-master="${esc(i.id)}">Excluir</button>
+      </td>
+    </tr>`).join("");
+  $("listaItens").innerHTML = rows || `<tr><td colspan="3">Nenhum item cadastrado.</td></tr>`;
+}
 
-  $("listaKits").innerHTML = getKits().map(k => {
+function renderKits() {
+  const html = getKits().map(k => {
     const comp = compositionForKit(k.id);
-    return comp.length
-      ? comp.map((x,i) => `
-        <tr>
-          <td>${esc(k.nome)}</td>
-          <td>${esc(x.item)}</td>
-          <td class="num">${x.quantidade}</td>
-          <td><button class="danger" data-delete-item="${esc(x.id)}">Excluir</button></td>
-        </tr>`).join("")
-      : `<tr><td>${esc(k.nome)}</td><td colspan="3" class="muted">Kit sem composição</td></tr>`;
-  }).join("") || `<tr><td colspan="4">Nenhum kit cadastrado.</td></tr>`;
+    const rows = comp.map(x => `
+      <div class="kit-item-row">
+        <span>${esc(x.itemObj.nome)}</span>
+        <span class="num">${x.quantidade}</span>
+        <button class="danger" data-delete-kit-item="${esc(x.id)}">Excluir</button>
+      </div>`).join("");
+    return `
+      <details class="kit-group" open>
+        <summary><strong>${esc(k.nome)}</strong><span class="muted">${comp.length} ${comp.length === 1 ? "item" : "itens"}</span></summary>
+        <div class="kit-group-body">
+          ${rows}
+          <div class="kit-group-actions">
+            <button class="danger" data-delete-kit="${esc(k.id)}">Excluir kit</button>
+          </div>
+        </div>
+      </details>`;
+  }).join("");
+  $("listaKits").innerHTML = html || `<div class="muted">Nenhum kit cadastrado.</div>`;
+}
 
+function renderSales() {
   const sales = [...state.sales].sort((a,b) => {
     const d = String(b.data).localeCompare(String(a.data));
     return d || String(b.created_at || "").localeCompare(String(a.created_at || ""));
@@ -128,57 +185,50 @@ function render() {
       <td class="num">${x.quantidade}</td>
       <td><button class="danger" data-delete-sale="${esc(x.id)}">Excluir</button></td>
     </tr>`).join("") || `<tr><td colspan="5">Nenhuma venda registrada.</td></tr>`;
+}
 
+function renderResult() {
   const c = consolidation();
   $("resultadoItens").innerHTML = c.map(x => `
-    <tr><td>${esc(x.item)}</td><td class="num">${x.direct}</td>
-    <td class="num">${x.inside}</td><td class="num"><b>${x.total}</b></td></tr>
+    <tr><td>${esc(x.item)}</td><td class="num">${x.direct}</td><td class="num">${x.inside}</td><td class="num"><b>${x.total}</b></td></tr>
   `).join("") || `<tr><td colspan="4">Nenhum item vendido.</td></tr>`;
-
-  $("totalVendas").textContent = sales.length;
+  $("totalVendas").textContent = state.sales.length;
   $("totalKits").textContent = state.sales.filter(x => x.tipo === "kit")
     .reduce((s,x) => s + Number(x.quantidade || 0), 0);
   $("totalItens").textContent = c.reduce((s,x) => s + x.total, 0);
+}
 
+function render() {
+  renderItemSelects();
+  renderKitSelect();
+  renderProductSelect();
+  renderItems();
+  renderKits();
+  renderSales();
+  renderResult();
   local.getMeta("lastSync").then(x => {
-    $("syncInfo").textContent = x ? `Última sincronização: ${new Date(x).toLocaleString("pt-BR")}` : "Ainda não sincronizado.";
+    $("syncInfo").textContent = x
+      ? `Última sincronização: ${new Date(x).toLocaleString("pt-BR")}`
+      : "Ainda não sincronizado.";
   });
 }
 
 async function ensureAuthorized() {
   if (!user) return false;
-
-  // Vincula o primeiro login ao pré-cadastro pelo e-mail.
-  // A função do banco usa auth.uid() e o e-mail de auth.users.
-  const { data: claimed, error: claimError } =
-    await supabase.rpc("claim_allowed_user");
-
+  const { data: claimed, error: claimError } = await supabase.rpc("claim_allowed_user");
   if (claimError) throw claimError;
-
   if (!claimed) {
     await supabase.auth.signOut();
-    throw new Error(
-      "Sua conta Google foi autenticada, mas não está autorizada no sistema."
-    );
+    throw new Error("Sua conta Google foi autenticada, mas não está autorizada no sistema.");
   }
-
-  // Confirma a autorização efetiva pelo UUID autenticado.
-  const { data, error } = await supabase
-    .from("allowed_users")
+  const { data, error } = await supabase.from("allowed_users")
     .select("user_id,email,ativo")
-    .eq("user_id", user.id)
-    .eq("ativo", true)
-    .maybeSingle();
-
+    .eq("user_id", user.id).eq("ativo", true).maybeSingle();
   if (error) throw error;
-
   if (!data) {
     await supabase.auth.signOut();
-    throw new Error(
-      "Sua conta Google foi autenticada, mas não está autorizada no sistema."
-    );
+    throw new Error("Sua conta Google foi autenticada, mas não está autorizada no sistema.");
   }
-
   return true;
 }
 
@@ -192,34 +242,150 @@ async function loadData() {
   render();
 }
 
-async function registerKit() {
-  const nome = $("kitNome").value.trim();
-  const item = $("itemNome").value.trim();
-  const quantidade = Number($("qtdNoKit").value);
-  if (!nome || !item || !Number.isFinite(quantidade) || quantidade <= 0)
-    return showMsg("msgKit", "Informe kit, item e quantidade válida.", false);
-
-  let kit = getKits().find(k => k.nome.toLocaleLowerCase() === nome.toLocaleLowerCase());
+async function registerItem() {
+  const nome = $("novoItemNome").value.trim();
+  if (!nome) return showMsg("msgItem", "Informe o nome do item.", false);
   try {
-    if (!kit) {
-      kit = await db.insertRemote(supabase, "kits", {
-        nome, ativo:true, created_by:user.id
-      });
-      state.kits.push(kit);
-    }
+    const exists = state.items.some(i => i.nome.trim().toLocaleLowerCase() === nome.toLocaleLowerCase());
+    if (exists) return showMsg("msgItem", "Já existe um item com esse nome.", false);
+    const row = await db.insertRemote(supabase, "items", { nome, ativo:true, created_by:user.id });
+    state.items.push(row);
+    await local.put("items", row);
+    $("novoItemNome").value = "";
+    render();
+    showMsg("msgItem", "Item cadastrado.");
+  } catch (e) {
+    showMsg("msgItem", e.message || "Erro ao cadastrar item.", false);
+  }
+}
+
+async function toggleItem(id) {
+  const item = state.items.find(x => x.id === id);
+  if (!item) return;
+  try {
+    const row = await db.updateRemote(supabase, "items", id, { ativo: !item.ativo, updated_at: new Date().toISOString() });
+    state.items = state.items.map(x => x.id === id ? row : x);
+    await local.put("items", row);
+    render();
+  } catch (e) {
+    showMsg("msgItem", e.message || "Erro ao alterar item.", false);
+  }
+}
+
+async function deleteMasterItem(id) {
+  const item = state.items.find(x => x.id === id);
+  if (!item) return;
+  const used = state.kit_items.some(x => x.item_id === id);
+  if (used) return showMsg("msgItem", "Este item está em um ou mais kits. Inative-o em vez de excluí-lo.", false);
+  if (!confirm(`Excluir o item "${item.nome}"?`)) return;
+  try {
+    await db.deleteRemote(supabase, "items", id);
+    state.items = state.items.filter(x => x.id !== id);
+    await local.remove("items", id);
+    render();
+    showMsg("msgItem", "Item excluído.");
+  } catch (e) {
+    showMsg("msgItem", e.message || "Erro ao excluir item.", false);
+  }
+}
+
+async function createKitWithFirstItem() {
+  const nome = $("novoKitNome").value.trim();
+  const itemId = $("primeiroItemKit").value;
+  const quantidade = Number($("primeiraQtdKit").value);
+  if (!nome || !itemId || !Number.isFinite(quantidade) || quantidade <= 0)
+    return showMsg("msgKit", "Informe kit, primeiro item e quantidade válida.", false);
+  try {
+    const { data, error } = await supabase.rpc("create_kit_with_item", {
+      p_nome: nome,
+      p_item_id: itemId,
+      p_quantidade: quantidade
+    });
+    if (error) throw error;
+    const kit = data;
+    state.kits.push(kit);
+    const remote = await db.fetchKitItemsForKit(supabase, kit.id);
+    state.kit_items.push(...remote);
+    await local.put("kits", kit);
+    for (const row of remote) await local.put("kit_items", row);
+    $("novoKitNome").value = "";
+    $("primeiraQtdKit").value = "1";
+    render();
+    showMsg("msgKit", "Kit cadastrado com o primeiro item.");
+  } catch (e) {
+    showMsg("msgKit", e.message || "Erro ao cadastrar kit.", false);
+  }
+}
+
+async function addItemToKit() {
+  const kitId = $("composicaoKit").value;
+  const itemId = $("composicaoItem").value;
+  const quantidade = Number($("composicaoQtd").value);
+  if (!kitId || !itemId || !Number.isFinite(quantidade) || quantidade <= 0)
+    return showMsg("msgKit", "Selecione kit, item e uma quantidade válida.", false);
+  if (state.kit_items.some(x => x.kit_id === kitId && x.item_id === itemId))
+    return showMsg("msgKit", "Esse item já está na composição do kit. Exclua o registro atual antes de cadastrar novamente.", false);
+  try {
     const row = await db.insertRemote(supabase, "kit_items", {
-      kit_id:kit.id, item, quantidade, created_by:user.id
+      kit_id: kitId, item_id: itemId, quantidade, created_by:user.id
     });
     state.kit_items.push(row);
-    await local.put("kits", kit);
     await local.put("kit_items", row);
-    $("kitNome").value = "";
-    $("itemNome").value = "";
-    $("qtdNoKit").value = "1";
+    $("composicaoQtd").value = "1";
     render();
-    showMsg("msgKit", "Composição adicionada.");
+    $("composicaoKit").value = kitId;
+    showMsg("msgKit", "Item adicionado ao kit.");
   } catch (e) {
-    showMsg("msgKit", e.message || "Erro ao salvar composição.", false);
+    showMsg("msgKit", e.message || "Erro ao adicionar item ao kit.", false);
+  }
+}
+
+async function deleteKitItem(id) {
+  const row = state.kit_items.find(x => x.id === id);
+  if (!row) return;
+  const kit = state.kits.find(k => k.id === row.kit_id);
+  const item = state.items.find(i => i.id === row.item_id);
+  if (!kit) return;
+  const remaining = state.kit_items.filter(x => x.kit_id === row.kit_id && x.id !== id);
+
+  if (remaining.length === 0) {
+    const ok = confirm(
+      `Este é o último item do kit "${kit.nome}".\n\n` +
+      `Ao excluí-lo, o kit também será excluído.\n` +
+      `As vendas já registradas serão preservadas.\n\n` +
+      `Continuar?`
+    );
+    if (!ok) return;
+    return deleteKit(kit.id);
+  }
+
+  if (!confirm(`Excluir "${item?.nome || "este item"}" da composição de "${kit.nome}"?`)) return;
+  try {
+    await db.deleteRemote(supabase, "kit_items", id);
+    state.kit_items = state.kit_items.filter(x => x.id !== id);
+    await local.remove("kit_items", id);
+    render();
+    showMsg("msgKit", "Item removido do kit.");
+  } catch (e) {
+    showMsg("msgKit", e.message || "Erro ao excluir composição.", false);
+  }
+}
+
+async function deleteKit(id) {
+  const kit = state.kits.find(k => k.id === id);
+  if (!kit) return;
+  if (!confirm(`Excluir o kit "${kit.nome}"?\n\nAs vendas já registradas serão preservadas.`)) return;
+  try {
+    const rows = state.kit_items.filter(x => x.kit_id === id);
+    await db.deleteRemote(supabase, "kits", id);
+    state.kits = state.kits.filter(k => k.id !== id);
+    state.kit_items = state.kit_items.filter(x => x.kit_id !== id);
+    await local.remove("kits", id);
+    for (const row of rows) await local.remove("kit_items", row.id);
+    render();
+    showMsg("msgKit", `Kit "${kit.nome}" excluído.`);
+  } catch (e) {
+    showMsg("msgKit", e.message || "Erro ao excluir kit.", false);
   }
 }
 
@@ -232,18 +398,19 @@ async function registerSale() {
     return showMsg("msgVenda", "Selecione o produto e informe uma quantidade válida.", false);
 
   try {
-    let produto = productValue;
+    let produto;
     let composicao = null;
-
     if (tipo === "kit") {
       const kit = state.kits.find(k => k.id === productValue);
       if (!kit) throw new Error("Kit não encontrado.");
+      const comp = compositionForKit(kit.id);
+      if (!comp.length) throw new Error("Este kit não possui composição.");
       produto = kit.nome;
-      composicao = compositionForKit(kit.id).map(x => ({
-        item: x.item,
-        quantidade: Number(x.quantidade)
-      }));
-      if (!composicao.length) throw new Error("Este kit não possui composição cadastrada.");
+      composicao = comp.map(x => ({ item:x.itemObj.nome, quantidade:Number(x.quantidade) }));
+    } else {
+      const item = state.items.find(i => i.id === productValue && i.ativo !== false);
+      if (!item) throw new Error("Item não encontrado.");
+      produto = item.nome;
     }
 
     const row = await db.insertRemote(supabase, "sales", {
@@ -271,76 +438,8 @@ async function deleteSale(id) {
   }
 }
 
-async function deleteKitItem(id) {
-  const row = state.kit_items.find(x => x.id === id);
-  if (!row) return;
-
-  const kit = state.kits.find(k => k.id === row.kit_id);
-  if (!kit) {
-    showMsg("msgKit", "Kit associado não encontrado.", false);
-    return;
-  }
-
-  const remainingItems = state.kit_items.filter(
-    x => x.kit_id === row.kit_id && x.id !== id
-  );
-
-  // Regra de negócio: um kit não pode existir sem composição.
-  // Se este for o último item, a exclusão remove também o kit.
-  if (remainingItems.length === 0) {
-    const ok = confirm(
-      `Este é o último item do kit "${kit.nome}".\n\n` +
-      `Ao excluí-lo, o kit também será excluído.\n` +
-      `As vendas já registradas serão preservadas.\n\n` +
-      `Continuar?`
-    );
-
-    if (!ok) return;
-
-    try {
-      // Excluir o kit diretamente. O banco remove seus kit_items
-      // automaticamente por ON DELETE CASCADE.
-      const kitItemsToRemove = state.kit_items.filter(
-        x => x.kit_id === kit.id
-      );
-
-      await db.deleteRemote(supabase, "kits", kit.id);
-
-      state.kits = state.kits.filter(k => k.id !== kit.id);
-      state.kit_items = state.kit_items.filter(
-        x => x.kit_id !== kit.id
-      );
-
-      await local.remove("kits", kit.id);
-
-      for (const item of kitItemsToRemove) {
-        await local.remove("kit_items", item.id);
-      }
-
-      render();
-      showMsg("msgKit", `Kit "${kit.nome}" excluído.`);
-    } catch (e) {
-      showMsg("msgKit", e.message || "Erro ao excluir kit.", false);
-    }
-
-    return;
-  }
-
-  // Ainda existem outros itens: exclui somente este componente.
-  if (!confirm("Excluir esta composição do kit?")) return;
-
-  try {
-    await db.deleteRemote(supabase, "kit_items", id);
-    state.kit_items = state.kit_items.filter(x => x.id !== id);
-    await local.remove("kit_items", id);
-    render();
-  } catch (e) {
-    showMsg("msgKit", e.message || "Erro ao excluir composição.", false);
-  }
-}
-
 async function clearSales() {
-  if (!confirm("Apagar TODAS as vendas compartilhadas? Os kits serão mantidos.")) return;
+  if (!confirm("Apagar TODAS as vendas compartilhadas? Os kits e itens serão mantidos.")) return;
   try {
     await db.clearRemoteSales(supabase);
     state.sales = [];
@@ -354,9 +453,10 @@ async function clearSales() {
 
 function exportBackup() {
   const payload = {
-    version: 4,
+    version: 6,
     exported_at: new Date().toISOString(),
     user: user?.email || null,
+    items: state.items,
     kits: state.kits,
     kit_items: state.kit_items,
     sales: state.sales
@@ -374,18 +474,11 @@ async function importBackup(file) {
   if (!file) return;
   try {
     const x = JSON.parse(await file.text());
-    if (!Array.isArray(x.kits) || !Array.isArray(x.kit_items) || !Array.isArray(x.sales))
-      throw new Error("Formato de backup inválido.");
-
-    const ok = confirm(
-      "O backup será importado para o navegador como cache local. " +
-      "Ele NÃO será enviado automaticamente ao Supabase. Continuar?"
-    );
+    if (!Array.isArray(x.items) || !Array.isArray(x.kits) || !Array.isArray(x.kit_items) || !Array.isArray(x.sales))
+      throw new Error("Formato de backup inválido para a versão atual.");
+    const ok = confirm("O backup será importado somente para o cache local. Ele NÃO será enviado automaticamente ao Supabase. Continuar?");
     if (!ok) return;
-
-    await db.replaceLocalState({
-      kits:x.kits, kit_items:x.kit_items, sales:x.sales
-    });
+    await db.replaceLocalState({ items:x.items, kits:x.kits, kit_items:x.kit_items, sales:x.sales });
     state = await db.loadLocalState();
     render();
     showMsg("msgDados", "Backup importado para o cache local.");
@@ -408,7 +501,7 @@ async function syncNow() {
 }
 
 function showTab(id) {
-  const valid = ["vendas","kits","resultado","dados"];
+  const valid = ["vendas","itens","kits","resultado","dados"];
   if (!valid.includes(id)) id = "vendas";
   document.querySelectorAll(".tab").forEach(b => b.classList.toggle("active", b.dataset.tab === id));
   document.querySelectorAll(".panel").forEach(p => p.classList.toggle("active", p.id === id));
@@ -420,16 +513,11 @@ async function init() {
     auth = createAuth(supabase, {
       onChange: async (u) => {
         user = u;
-
         if (!u) {
           renderLogin(false, false);
           return;
         }
-
-        // Enquanto a autorização não for confirmada, a interface
-        // operacional permanece escondida.
         renderLogin(false, true);
-
         try {
           await ensureAuthorized();
           renderLogin(true, false);
@@ -437,11 +525,7 @@ async function init() {
         } catch (e) {
           user = null;
           renderLogin(false, false);
-          showMsg(
-            "msgGlobal",
-            e.message || "Acesso não autorizado.",
-            false
-          );
+          showMsg("msgGlobal", e.message || "Acesso não autorizado.", false);
         }
       }
     });
@@ -453,7 +537,9 @@ async function init() {
     $("loginBtn2").onclick = () => auth.login().catch(e => showMsg("msgGlobal", e.message, false));
     $("logoutBtn").onclick = () => auth.logout().catch(e => showMsg("msgGlobal", e.message, false));
     $("tipoVenda").onchange = renderProductSelect;
-    $("addKit").onclick = registerKit;
+    $("addItem").onclick = registerItem;
+    $("createKit").onclick = createKitWithFirstItem;
+    $("addComposicao").onclick = addItemToKit;
     $("addVenda").onclick = registerSale;
     $("limparVendas").onclick = clearSales;
     $("sincronizar").onclick = syncNow;
@@ -461,14 +547,21 @@ async function init() {
     $("importar").onchange = e => importBackup(e.target.files[0]);
 
     document.querySelectorAll(".tab").forEach(b => b.onclick = () => showTab(b.dataset.tab));
-    document.querySelectorAll("#listaVendas").forEach(() => {});
+    $("listaItens").addEventListener("click", e => {
+      const toggle = e.target.dataset.toggleItem;
+      const del = e.target.dataset.deleteItemMaster;
+      if (toggle) toggleItem(toggle);
+      if (del) deleteMasterItem(del);
+    });
+    $("listaKits").addEventListener("click", e => {
+      const itemId = e.target.dataset.deleteKitItem;
+      const kitId = e.target.dataset.deleteKit;
+      if (itemId) deleteKitItem(itemId);
+      if (kitId) deleteKit(kitId);
+    });
     $("listaVendas").addEventListener("click", e => {
       const id = e.target.dataset.deleteSale;
       if (id) deleteSale(id);
-    });
-    $("listaKits").addEventListener("click", e => {
-      const id = e.target.dataset.deleteItem;
-      if (id) deleteKitItem(id);
     });
 
     window.addEventListener("online", async () => {
@@ -482,7 +575,6 @@ async function init() {
     if (existing) {
       user = existing;
       renderLogin(false, true);
-
       try {
         await ensureAuthorized();
         renderLogin(true, false);
@@ -490,11 +582,7 @@ async function init() {
       } catch(e) {
         user = null;
         renderLogin(false, false);
-        showMsg(
-          "msgGlobal",
-          e.message || "Acesso não autorizado.",
-          false
-        );
+        showMsg("msgGlobal", e.message || "Acesso não autorizado.", false);
       }
     }
   } catch (e) {
