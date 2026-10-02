@@ -20,9 +20,3 @@ export async function pendingOperations() {
 export async function removeOperation(id) {
   return local.remove("pending_ops", id);
 }
-
-/*
- * V4 usa o servidor como fonte compartilhada. Operações online são enviadas
- * imediatamente. A fila é preparada para extensões futuras de operação offline.
- * A sincronização automática atualiza o cache quando a conexão retorna.
- */
