@@ -272,7 +272,63 @@ async function deleteSale(id) {
 }
 
 async function deleteKitItem(id) {
+  const row = state.kit_items.find(x => x.id === id);
+  if (!row) return;
+
+  const kit = state.kits.find(k => k.id === row.kit_id);
+  if (!kit) {
+    showMsg("msgKit", "Kit associado não encontrado.", false);
+    return;
+  }
+
+  const remainingItems = state.kit_items.filter(
+    x => x.kit_id === row.kit_id && x.id !== id
+  );
+
+  // Regra de negócio: um kit não pode existir sem composição.
+  // Se este for o último item, a exclusão remove também o kit.
+  if (remainingItems.length === 0) {
+    const ok = confirm(
+      `Este é o último item do kit "${kit.nome}".\\n\\n` +
+      `Ao excluí-lo, o kit também será excluído.\\n` +
+      `As vendas já registradas serão preservadas.\\n\\n` +
+      `Continuar?`
+    );
+
+    if (!ok) return;
+
+    try {
+      // Excluir o kit diretamente. O banco remove seus kit_items
+      // automaticamente por ON DELETE CASCADE.
+      const kitItemsToRemove = state.kit_items.filter(
+        x => x.kit_id === kit.id
+      );
+
+      await db.deleteRemote(supabase, "kits", kit.id);
+
+      state.kits = state.kits.filter(k => k.id !== kit.id);
+      state.kit_items = state.kit_items.filter(
+        x => x.kit_id !== kit.id
+      );
+
+      await local.remove("kits", kit.id);
+
+      for (const item of kitItemsToRemove) {
+        await local.remove("kit_items", item.id);
+      }
+
+      render();
+      showMsg("msgKit", `Kit "${kit.nome}" excluído.`);
+    } catch (e) {
+      showMsg("msgKit", e.message || "Erro ao excluir kit.", false);
+    }
+
+    return;
+  }
+
+  // Ainda existem outros itens: exclui somente este componente.
   if (!confirm("Excluir esta composição do kit?")) return;
+
   try {
     await db.deleteRemote(supabase, "kit_items", id);
     state.kit_items = state.kit_items.filter(x => x.id !== id);
