@@ -33,14 +33,21 @@ function setOnlineStatus() {
   $("offlineBanner").classList.toggle("hidden", navigator.onLine);
 }
 
-function renderLogin() {
+function renderLogin(authorized = false, checking = false) {
   const logged = !!user;
-  $("loginPanel").classList.toggle("hidden", logged);
-  $("app").classList.toggle("hidden", !logged);
-  $("loginBtn").classList.toggle("hidden", logged);
-  $("loginBtn2").classList.toggle("hidden", logged);
+  const canUseApp = logged && authorized && !checking;
+
+  // A sessão Google, sozinha, não libera a interface operacional.
+  $("loginPanel").classList.toggle("hidden", canUseApp);
+  $("app").classList.toggle("hidden", !canUseApp);
+  $("loginBtn").classList.toggle("hidden", logged || checking);
+  $("loginBtn2").classList.toggle("hidden", logged || checking);
   $("logoutBtn").classList.toggle("hidden", !logged);
   $("userEmail").textContent = logged ? user.email : "";
+
+  if (checking) {
+    showMsg("msgGlobal", "Verificando autorização...", true);
+  }
 }
 
 function kitRows() {
@@ -140,16 +147,38 @@ function render() {
 
 async function ensureAuthorized() {
   if (!user) return false;
+
+  // Vincula o primeiro login ao pré-cadastro pelo e-mail.
+  // A função do banco usa auth.uid() e o e-mail de auth.users.
+  const { data: claimed, error: claimError } =
+    await supabase.rpc("claim_allowed_user");
+
+  if (claimError) throw claimError;
+
+  if (!claimed) {
+    await supabase.auth.signOut();
+    throw new Error(
+      "Sua conta Google foi autenticada, mas não está autorizada no sistema."
+    );
+  }
+
+  // Confirma a autorização efetiva pelo UUID autenticado.
   const { data, error } = await supabase
     .from("allowed_users")
     .select("user_id,email,ativo")
     .eq("user_id", user.id)
+    .eq("ativo", true)
     .maybeSingle();
+
   if (error) throw error;
-  if (!data || data.ativo !== true) {
+
+  if (!data) {
     await supabase.auth.signOut();
-    throw new Error("Sua conta Google está autenticada, mas não está autorizada no sistema.");
+    throw new Error(
+      "Sua conta Google foi autenticada, mas não está autorizada no sistema."
+    );
   }
+
   return true;
 }
 
@@ -335,13 +364,28 @@ async function init() {
     auth = createAuth(supabase, {
       onChange: async (u) => {
         user = u;
-        renderLogin();
-        if (!u) return;
+
+        if (!u) {
+          renderLogin(false, false);
+          return;
+        }
+
+        // Enquanto a autorização não for confirmada, a interface
+        // operacional permanece escondida.
+        renderLogin(false, true);
+
         try {
           await ensureAuthorized();
+          renderLogin(true, false);
           await loadData();
         } catch (e) {
-          showMsg("msgGlobal", e.message || "Acesso não autorizado.", false);
+          user = null;
+          renderLogin(false, false);
+          showMsg(
+            "msgGlobal",
+            e.message || "Acesso não autorizado.",
+            false
+          );
         }
       }
     });
@@ -377,13 +421,25 @@ async function init() {
     });
     window.addEventListener("offline", setOnlineStatus);
 
-    renderLogin();
+    renderLogin(false, false);
     const existing = await auth.getUser();
     if (existing) {
       user = existing;
-      renderLogin();
-      try { await ensureAuthorized(); await loadData(); }
-      catch(e) { showMsg("msgGlobal", e.message || "Acesso não autorizado.", false); }
+      renderLogin(false, true);
+
+      try {
+        await ensureAuthorized();
+        renderLogin(true, false);
+        await loadData();
+      } catch(e) {
+        user = null;
+        renderLogin(false, false);
+        showMsg(
+          "msgGlobal",
+          e.message || "Acesso não autorizado.",
+          false
+        );
+      }
     }
   } catch (e) {
     showMsg("msgGlobal", e.message || "Falha ao inicializar o aplicativo.", false);
