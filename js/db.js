@@ -1,6 +1,6 @@
 import * as local from "./localdb.js";
 
-const TABLES = ["kits", "kit_items", "sales"];
+const TABLES = ["items", "kits", "kit_items", "sales"];
 
 export async function loadLocalState() {
   const out = {};
@@ -35,9 +35,21 @@ export async function insertRemote(supabase, table, row) {
   return data;
 }
 
+export async function updateRemote(supabase, table, id, patch) {
+  const { data, error } = await supabase.from(table).update(patch).eq("id", id).select().single();
+  if (error) throw error;
+  return data;
+}
+
 export async function deleteRemote(supabase, table, id) {
   const { error } = await supabase.from(table).delete().eq("id", id);
   if (error) throw error;
+}
+
+export async function fetchKitItemsForKit(supabase, kitId) {
+  const { data, error } = await supabase.from("kit_items").select("*").eq("kit_id", kitId);
+  if (error) throw error;
+  return data || [];
 }
 
 export async function clearRemoteSales(supabase) {

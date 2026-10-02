@@ -1,4 +1,4 @@
-const CACHE = "controle-kits-v4-static";
+const CACHE = "controle-kits-v6.2-static";
 const ASSETS = [
   "./",
   "./index.html",
