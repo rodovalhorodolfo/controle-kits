@@ -159,7 +159,7 @@ function renderKits() {
         <button class="danger" data-delete-kit-item="${esc(x.id)}">Excluir</button>
       </div>`).join("");
     return `
-      <details class="kit-group" open>
+      <details class="kit-group">
         <summary><strong>${esc(k.nome)}</strong><span class="muted">${comp.length} ${comp.length === 1 ? "item" : "itens"}</span></summary>
         <div class="kit-group-body">
           ${rows}
