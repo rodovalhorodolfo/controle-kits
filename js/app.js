@@ -289,9 +289,9 @@ async function deleteKitItem(id) {
   // Se este for o último item, a exclusão remove também o kit.
   if (remainingItems.length === 0) {
     const ok = confirm(
-      `Este é o último item do kit "${kit.nome}".\\n\\n` +
-      `Ao excluí-lo, o kit também será excluído.\\n` +
-      `As vendas já registradas serão preservadas.\\n\\n` +
+      `Este é o último item do kit "${kit.nome}".\n\n` +
+      `Ao excluí-lo, o kit também será excluído.\n` +
+      `As vendas já registradas serão preservadas.\n\n` +
       `Continuar?`
     );
 
