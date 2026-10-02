@@ -234,10 +234,42 @@ async function ensureAuthorized() {
 
 async function loadData() {
   try {
-    state = await syncFromServer(supabase);
+    // V6 lê diretamente as quatro tabelas do Supabase.
+    // Isso mantém o app compatível mesmo se o sync.js antigo ainda estiver no GitHub.
+    const out = {};
+    for (const table of ["items", "kits", "kit_items", "sales"]) {
+      const { data, error } = await supabase.from(table).select("*");
+      if (error) throw error;
+      out[table] = Array.isArray(data) ? data : [];
+    }
+    state = {
+      items: Array.isArray(out.items) ? out.items : [],
+      kits: Array.isArray(out.kits) ? out.kits : [],
+      kit_items: Array.isArray(out.kit_items) ? out.kit_items : [],
+      sales: Array.isArray(out.sales) ? out.sales : []
+    };
+    // Atualiza o cache das tabelas que existem nas versões anteriores.
+    for (const table of ["kits", "kit_items", "sales"]) {
+      try {
+        await local.clear(table);
+        for (const row of state[table]) await local.put(table, row);
+      } catch (_) {}
+    }
+    try { await local.setMeta("lastSync", new Date().toISOString()); } catch (_) {}
   } catch (e) {
-    state = await db.loadLocalState();
-    showMsg("msgGlobal", "Não foi possível sincronizar. Usando o cache local.", false);
+    try {
+      const cached = await db.loadLocalState();
+      state = {
+        items: Array.isArray(cached?.items) ? cached.items : [],
+        kits: Array.isArray(cached?.kits) ? cached.kits : [],
+        kit_items: Array.isArray(cached?.kit_items) ? cached.kit_items : [],
+        sales: Array.isArray(cached?.sales) ? cached.sales : []
+      };
+      showMsg("msgGlobal", "Não foi possível sincronizar. Usando o cache local.", false);
+    } catch (_) {
+      state = { items: [], kits: [], kit_items: [], sales: [] };
+      showMsg("msgGlobal", e.message || "Erro ao carregar os dados.", false);
+    }
   }
   render();
 }
@@ -250,7 +282,7 @@ async function registerItem() {
     if (exists) return showMsg("msgItem", "Já existe um item com esse nome.", false);
     const row = await db.insertRemote(supabase, "items", { nome, ativo:true, created_by:user.id });
     state.items.push(row);
-    await local.put("items", row);
+    try { await local.put("items", row); } catch (_) {}
     $("novoItemNome").value = "";
     render();
     showMsg("msgItem", "Item cadastrado.");
@@ -263,9 +295,14 @@ async function toggleItem(id) {
   const item = state.items.find(x => x.id === id);
   if (!item) return;
   try {
-    const row = await db.updateRemote(supabase, "items", id, { ativo: !item.ativo, updated_at: new Date().toISOString() });
+    const { data: row, error } = await supabase.from("items")
+      .update({ ativo: !item.ativo, updated_at: new Date().toISOString() })
+      .eq("id", id)
+      .select()
+      .single();
+    if (error) throw error;
     state.items = state.items.map(x => x.id === id ? row : x);
-    await local.put("items", row);
+    try { await local.put("items", row); } catch (_) {}
     render();
   } catch (e) {
     showMsg("msgItem", e.message || "Erro ao alterar item.", false);
@@ -281,7 +318,7 @@ async function deleteMasterItem(id) {
   try {
     await db.deleteRemote(supabase, "items", id);
     state.items = state.items.filter(x => x.id !== id);
-    await local.remove("items", id);
+    try { await local.remove("items", id); } catch (_) {}
     render();
     showMsg("msgItem", "Item excluído.");
   } catch (e) {
