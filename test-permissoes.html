@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Teste de permissões — Controle de Kits</title>
+  <style>
+    :root{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:#18212b;background:#f4f6f8;line-height:1.5}
+    *{box-sizing:border-box}body{margin:0;padding:24px}main{max-width:920px;margin:auto}h1{font-size:1.65rem;margin:0 0 6px}h2{font-size:1.1rem;margin:0 0 10px}p{margin:6px 0 12px}.muted{color:#5c6874;font-size:.94rem}.panel{background:white;border:1px solid #d9e0e6;border-radius:12px;padding:18px;margin:16px 0}.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}button{border:0;border-radius:8px;padding:10px 14px;font:inherit;font-weight:600;cursor:pointer;background:#245b9e;color:white}button.secondary{background:#e7edf3;color:#18212b}button.danger{background:#b42318}button:disabled{opacity:.5;cursor:not-allowed}input[type=text]{width:min(100%,560px);padding:10px;border:1px solid #aab5c0;border-radius:8px;font:inherit}.warning{background:#fff4d6;border:1px solid #e6c56b;padding:12px;border-radius:8px}.status{padding:10px;border-radius:8px;background:#eef2f5;margin-top:10px;white-space:pre-wrap;overflow-wrap:anywhere}.status.ok{background:#e5f5eb;color:#155c35}.status.bad{background:#fde8e7;color:#8f1d17}.status.warn{background:#fff4d6;color:#714d00}ul{padding-left:22px}li{margin:7px 0}.tag{font-size:.8rem;border-radius:5px;padding:2px 6px;background:#eef2f5}code{overflow-wrap:anywhere}label{display:block;margin:10px 0}footer{margin:22px 0;color:#5c6874;font-size:.85rem}
+  </style>
+</head>
+<body>
+<main>
+  <h1>Teste de permissões do Supabase</h1>
+  <p class="muted">Página auxiliar independente da interface principal. Ela autentica com Google, mas não executa a verificação <code>claim_allowed_user</code> do aplicativo; assim, é possível testar as políticas do banco com uma conta autenticada e não autorizada.</p>
+  <div class="warning"><strong>Cuidados:</strong> não use chaves secretas nem <code>service_role</code>. Os testes de escrita desta página só criam, alteram ou excluem registros na tabela <code>items</code> com um nome identificável de teste. Para testar atualização/exclusão de outro usuário, informe somente o ID de um item descartável criado especificamente para este teste.</div>
+
+  <section class="panel">
+    <h2>1. Autenticação</h2>
+    <div class="row"><button id="login">Entrar com Google</button><button id="logout" class="secondary" disabled>Sair</button></div>
+    <div id="session" class="status">Verificando sessão…</div>
+  </section>
+
+  <section class="panel">
+    <h2>2. Teste de leitura</h2>
+    <p class="muted">Consulta as tabelas usadas pelo sistema e informa somente a quantidade de linhas retornadas, sem exibir os dados comerciais.</p>
+    <button id="read" disabled>Testar SELECT nas tabelas</button>
+    <div id="readResults" class="status">Aguardando autenticação.</div>
+  </section>
+
+  <section class="panel">
+    <h2>3. Teste de inclusão</h2>
+    <p>Cria um item temporário com nome começando por <code>__TESTE_RLS_</code>. Se a política bloquear a inclusão, nenhum registro será criado. Se permitir, a página exibirá o ID para usar nos testes seguintes.</p>
+    <div class="row"><button id="insert" disabled>Criar item descartável</button><button id="copyId" class="secondary" disabled>Copiar ID do item criado</button></div>
+    <div id="insertResult" class="status">Nenhum teste executado.</div>
+  </section>
+
+  <section class="panel">
+    <h2>4. Teste de atualização e exclusão de um item descartável</h2>
+    <p class="muted">Para testar essas permissões quando a inclusão estiver bloqueada, entre primeiro com uma conta autorizada, crie um item descartável nesta página e copie seu ID. Depois entre com a conta não autorizada e informe o ID abaixo. Não informe IDs de itens reais.</p>
+    <label for="targetId">ID do item descartável</label>
+    <input id="targetId" type="text" placeholder="Cole aqui o UUID do item de teste">
+    <label><input id="confirmDisposable" type="checkbox"> Confirmo que este ID pertence exclusivamente a um item descartável criado para teste e que autorizo sua alteração/exclusão.</label>
+    <div class="row"><button id="update" disabled>Testar UPDATE (definir ativo = false)</button><button id="delete" class="danger" disabled>Testar DELETE do item informado</button></div>
+    <div id="writeResults" class="status">Aguardando autenticação e confirmação do item descartável.</div>
+  </section>
+
+  <section class="panel">
+    <h2>Como interpretar</h2>
+    <ul>
+      <li><strong>SELECT retornou linhas:</strong> a conta conseguiu ler os registros retornados; verifique se essa leitura é permitida pela regra de negócio.</li>
+      <li><strong>SELECT retornou zero linhas:</strong> não prova, sozinho, que o acesso foi negado. A tabela pode estar vazia ou a RLS pode filtrar as linhas.</li>
+      <li><strong>INSERT/UPDATE/DELETE bloqueado:</strong> resultado esperado para uma conta sem permissão, desde que a operação tenha sido testada com um alvo válido quando aplicável.</li>
+      <li><strong>UPDATE/DELETE afetou zero linhas:</strong> não considere isso prova definitiva de bloqueio; a política pode filtrar o registro ou o ID pode não existir.</li>
+      <li>Um erro de rede, sessão expirada ou tabela inexistente não é um resultado conclusivo de RLS.</li>
+    </ul>
+  </section>
+  <footer>Use apenas em seu próprio projeto. Remova esta página do site publicado depois dos testes. A página não usa nem solicita credenciais administrativas.</footer>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script type="module">
+  import { SUPABASE_URL, SUPABASE_ANON_KEY } from './js/config.js';
+
+  const $ = id => document.getElementById(id);
+  const tables = ['items', 'kits', 'kit_items', 'sales', 'allowed_users'];
+  const client = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
+  });
+  let currentUser = null;
+  let lastCreatedId = null;
+
+  function show(id, message, kind='') {
+    const el = $(id); el.textContent = message; el.className = 'status' + (kind ? ' ' + kind : '');
+  }
+  function setSession(user) {
+    currentUser = user || null;
+    $('login').disabled = !!currentUser;
+    $('logout').disabled = !currentUser;
+    for (const id of ['read','insert','update','delete']) $(id).disabled = !currentUser;
+    $('copyId').disabled = !lastCreatedId;
+    show('session', currentUser ? `Autenticado: ${currentUser.email || '(e-mail não informado)'}\nID do usuário: ${currentUser.id}\nEsta página não verificou se a conta está autorizada no aplicativo.` : 'Nenhuma sessão ativa.', currentUser ? 'ok' : '');
+    updateWriteButtons();
+  }
+  function updateWriteButtons() {
+    const canTarget = !!currentUser && $('confirmDisposable').checked && $('targetId').value.trim().length > 0;
+    $('update').disabled = !canTarget;
+    $('delete').disabled = !canTarget;
+  }
+  function errorText(error) {
+    return `${error?.message || 'Erro sem mensagem'}${error?.code ? ` (código ${error.code})` : ''}`;
+  }
+
+  $('login').addEventListener('click', async () => {
+    const redirectTo = window.location.href.split('#')[0].split('?')[0];
+    const { error } = await client.auth.signInWithOAuth({ provider: 'google', options: { redirectTo } });
+    if (error) show('session', errorText(error), 'bad');
+  });
+  $('logout').addEventListener('click', async () => {
+    const { error } = await client.auth.signOut();
+    if (error) show('session', errorText(error), 'bad'); else setSession(null);
+  });
+  client.auth.onAuthStateChange((_event, session) => setSession(session?.user || null));
+  client.auth.getSession().then(({ data, error }) => {
+    if (error) show('session', errorText(error), 'bad'); else setSession(data.session?.user || null);
+  });
+
+  $('read').addEventListener('click', async () => {
+    const lines = [];
+    show('readResults', 'Executando consultas…');
+    for (const table of tables) {
+      try {
+        const { data, error, count } = await client.from(table).select('*', { count: 'exact', head: true });
+        if (error) lines.push(`${table}: ERRO — ${errorText(error)}`);
+        else lines.push(`${table}: consulta permitida; linhas visíveis: ${count ?? 'contagem não disponível'}`);
+      } catch (e) { lines.push(`${table}: ERRO — ${errorText(e)}`); }
+    }
+    show('readResults', lines.join('\n'), lines.some(x => x.includes('linhas visíveis:') && !x.endsWith('0')) ? 'warn' : '');
+  });
+
+  $('insert').addEventListener('click', async () => {
+    const name = `__TESTE_RLS_${new Date().toISOString().replace(/[-:.TZ]/g,'').slice(0,14)}_${crypto.randomUUID().slice(0,8)}`;
+    show('insertResult', 'Tentando inserir um item temporário…');
+    const { data, error } = await client.from('items').insert({ nome: name, ativo: true, created_by: currentUser.id }).select('id,nome').maybeSingle();
+    if (error) {
+      show('insertResult', `INSERT bloqueado ou falhou.\n${errorText(error)}\nConfirme que o esquema e a política RLS estão configurados corretamente.`, 'ok');
+      return;
+    }
+    if (!data?.id) {
+      show('insertResult', 'A requisição não retornou ID. Verifique as permissões de retorno (SELECT) e a política RLS. Confira a tabela antes de repetir o teste.', 'warn');
+      return;
+    }
+    lastCreatedId = String(data.id);
+    $('targetId').value = lastCreatedId;
+    $('confirmDisposable').checked = false;
+    $('copyId').disabled = false;
+    updateWriteButtons();
+    show('insertResult', `ATENÇÃO: a inclusão foi permitida.\nNome: ${data.nome}\nID: ${data.id}\nA conta conseguiu inserir um registro na tabela items. Copie o ID para testar UPDATE/DELETE depois, se necessário.`, 'bad');
+  });
+  $('copyId').addEventListener('click', async () => {
+    if (!lastCreatedId) return;
+    try { await navigator.clipboard.writeText(lastCreatedId); show('insertResult', `ID copiado: ${lastCreatedId}`, 'ok'); }
+    catch { show('insertResult', `Copie manualmente este ID:\n${lastCreatedId}`, 'warn'); }
+  });
+
+  $('targetId').addEventListener('input', updateWriteButtons);
+  $('confirmDisposable').addEventListener('change', updateWriteButtons);
+  $('update').addEventListener('click', async () => {
+    if (!currentUser || !$('confirmDisposable').checked) return;
+    const id = $('targetId').value.trim();
+    if (!confirm(`A tentativa vai definir ativo=false SOMENTE no item com ID ${id}. Confirma que é um item descartável?`)) return;
+    const { data, error } = await client.from('items').update({ ativo: false, updated_at: new Date().toISOString() }).eq('id', id).select('id,ativo');
+    if (error) show('writeResults', `UPDATE bloqueado ou falhou.\n${errorText(error)}`, 'ok');
+    else if (!data?.length) show('writeResults', 'UPDATE não retornou linhas. Pode ter sido filtrado pela RLS ou o ID pode não existir; resultado inconclusivo.', 'warn');
+    else show('writeResults', `ATENÇÃO: UPDATE permitido. Linhas alteradas: ${data.length}.\n${JSON.stringify(data)}`, 'bad');
+  });
+  $('delete').addEventListener('click', async () => {
+    if (!currentUser || !$('confirmDisposable').checked) return;
+    const id = $('targetId').value.trim();
+    if (!confirm(`EXCLUSÃO DEFINITIVA do item com ID ${id}. Só continue se ele for descartável e criado para este teste. Confirma?`)) return;
+    const { data, error } = await client.from('items').delete().eq('id', id).select('id');
+    if (error) show('writeResults', `DELETE bloqueado ou falhou.\n${errorText(error)}`, 'ok');
+    else if (!data?.length) show('writeResults', 'DELETE não retornou linhas. Pode ter sido filtrado pela RLS ou o ID pode não existir; resultado inconclusivo.', 'warn');
+    else show('writeResults', `ATENÇÃO: DELETE permitido. Linhas excluídas: ${data.length}.\n${JSON.stringify(data)}`, 'bad');
+  });
+</script>
+</body>
+</html>
