@@ -196,7 +196,7 @@ function renderResult() {
     return (!start || date >= start) && (!end || date <= end);
   });
 
-  const c = consolidation(filteredSales);
+  const c = consolidation(filteredSales).filter(x => x.total > 0);
   $("resultadoItens").innerHTML = c.map(x => `
     <tr><td>${esc(x.item)}</td><td class="num">${x.direct}</td><td class="num">${x.inside}</td><td class="num"><b>${x.total}</b></td></tr>
   `).join("") || `<tr><td colspan="4">Nenhum item vendido no período selecionado.</td></tr>`;
