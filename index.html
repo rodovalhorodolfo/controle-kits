@@ -55,7 +55,7 @@
       </div>
       <div class="actions"><button id="addVenda" class="primary">Registrar venda</button><button id="limparVendas" class="danger">Apagar todas as vendas</button></div>
       <div id="msgVenda" class="msg"></div>
-      
+      <div class="tablewrap"><table><thead><tr><th>Data</th><th>Produto</th><th>Tipo</th><th class="num">Quantidade</th><th></th></tr></thead><tbody id="listaVendas"></tbody></table></div>
     </section>
 
     <section id="itens" class="panel">
@@ -110,9 +110,9 @@
     </section>
 
     <section id="resultado" class="panel">
-      <h2>Itens vendidos</h2>
+      <h2>Consolidação dos itens vendidos</h2>
       <div class="sales-filter card">
-        <h3>Filtrar vendas por período</h3>
+        <h3>Filtrar itens vendidos por período</h3>
         <div class="grid sales-filter-grid">
           <div><label for="data_ini">Data inicial</label><input id="data_ini" type="date"></div>
           <div><label for="data_fim">Data final</label><input id="data_fim" type="date"></div>
@@ -123,9 +123,6 @@
           <span id="resumoPeriodo" class="muted" aria-live="polite"></span>
         </div>
       </div>
-      <h3 style="margin-top:18px">Vendas registradas</h3>
-      <div class="tablewrap"><table><thead><tr><th>Data</th><th>Produto</th><th>Tipo</th><th class="num">Quantidade</th><th></th></tr></thead><tbody id="listaVendas"></tbody></table></div>
-      <h3 style="margin-top:20px">Consolidação dos itens vendidos</h3>
       <div class="cards"><div class="card"><span class="muted">Lançamentos</span><b id="totalVendas">0</b></div><div class="card"><span class="muted">Unidades de kits</span><b id="totalKits">0</b></div><div class="card"><span class="muted">Itens totais</span><b id="totalItens">0</b></div></div>
       <div class="tablewrap"><table><thead><tr><th>Item</th><th class="num">Venda direta</th><th class="num">Dentro de kits</th><th class="num">Total vendido</th></tr></thead><tbody id="resultadoItens"></tbody></table></div>
     </section>
