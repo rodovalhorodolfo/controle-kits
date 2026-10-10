@@ -51,10 +51,8 @@ h3{margin:0 0 10px}
 @media(max-width:600px){.kit-item-row{grid-template-columns:1fr 70px auto}.kit-group summary{align-items:flex-start}}
 
 
-/* Filtro por período na aba Itens vendidos */
+/* Filtro por período na consolidação de itens vendidos */
 .sales-filter{margin:12px 0 16px}
 .sales-filter h3{margin-bottom:12px}
 .sales-filter-grid{grid-template-columns:repeat(2,minmax(0,1fr));max-width:560px}
-.sales-date-group td{background:#eef2f5;font-weight:700;color:var(--accent2)}
-.sales-date-group span{float:right;color:var(--muted);font-size:12px;font-weight:400}
 @media(max-width:480px){.sales-filter-grid{grid-template-columns:1fr}}
