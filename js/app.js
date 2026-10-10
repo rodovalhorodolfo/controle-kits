@@ -172,62 +172,46 @@ function renderKits() {
   $("listaKits").innerHTML = html || `<div class="muted">Nenhum kit cadastrado.</div>`;
 }
 
-function formatSaleDate(dateValue) {
-  const value = String(dateValue || "");
-  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  return match ? `${match[3]}/${match[2]}/${match[1]}` : esc(value);
+function formatSaleDate(value) {
+  const raw = String(value || "");
+  const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  return match ? `${match[3]}/${match[2]}/${match[1]}` : raw;
 }
 
 function renderSales() {
-  const dataIni = $("data_ini")?.value || "";
-  const dataFim = $("data_fim")?.value || "";
-  const tbody = $("listaVendas");
-  const resumo = $("resumoPeriodo");
+  const start = $("data_ini")?.value || "";
+  const end = $("data_fim")?.value || "";
 
-  if (dataIni && dataFim && dataIni > dataFim) {
-    tbody.innerHTML = `<tr><td colspan="5">A data inicial não pode ser posterior à data final.</td></tr>`;
-    if (resumo) resumo.textContent = "Intervalo inválido.";
-    return;
-  }
-
-  const sales = [...state.sales]
-    .filter(x => (!dataIni || String(x.data || "") >= dataIni) &&
-                 (!dataFim || String(x.data || "") <= dataFim))
-    .sort((a,b) => {
-      const d = String(b.data || "").localeCompare(String(a.data || ""));
-      return d || String(b.created_at || "").localeCompare(String(a.created_at || ""));
-    });
-
-  const groups = new Map();
-  for (const sale of sales) {
-    const day = String(sale.data || "");
-    if (!groups.has(day)) groups.set(day, []);
-    groups.get(day).push(sale);
-  }
+  let sales = [...state.sales].filter(x => {
+    const date = String(x.data || "");
+    return (!start || date >= start) && (!end || date <= end);
+  }).sort((a,b) => {
+    const d = String(b.data).localeCompare(String(a.data));
+    return d || String(b.created_at || "").localeCompare(String(a.created_at || ""));
+  });
 
   const rows = [];
-  for (const [day, daySales] of groups) {
-    rows.push(`<tr class="sales-date-group"><th colspan="5" scope="rowgroup">${formatSaleDate(day)} <span>${daySales.length} ${daySales.length === 1 ? "venda" : "vendas"}</span></th></tr>`);
-    for (const x of daySales) {
-      rows.push(`
-        <tr>
-          <td>${formatSaleDate(x.data)}</td>
-          <td>${esc(x.produto)}</td>
-          <td>${x.tipo === "kit" ? "Kit" : "Item"}</td>
-          <td class="num">${esc(x.quantidade)}</td>
-          <td><button class="danger" data-delete-sale="${esc(x.id)}">Excluir</button></td>
-        </tr>`);
+  let currentDate = null;
+  for (const sale of sales) {
+    if (sale.data !== currentDate) {
+      currentDate = sale.data;
+      const count = sales.filter(x => x.data === currentDate).length;
+      rows.push(`<tr class="sales-date-group"><td colspan="5">${esc(formatSaleDate(currentDate))} <span>${count} ${count === 1 ? "venda" : "vendas"}</span></td></tr>`);
     }
+    rows.push(`<tr>
+      <td>${esc(formatSaleDate(sale.data))}</td>
+      <td>${esc(sale.produto)}</td>
+      <td>${sale.tipo === "kit" ? "Kit" : "Item"}</td>
+      <td class="num">${sale.quantidade}</td>
+      <td><button class="danger" data-delete-sale="${esc(sale.id)}">Excluir</button></td>
+    </tr>`);
   }
 
-  tbody.innerHTML = rows.join("") || `<tr><td colspan="5">${state.sales.length ? "Nenhuma venda encontrada nesse período." : "Nenhuma venda registrada."}</td></tr>`;
-
-  if (resumo) {
-    const interval = dataIni || dataFim
-      ? `Período: ${dataIni ? formatSaleDate(dataIni) : "início"} a ${dataFim ? formatSaleDate(dataFim) : "hoje"}`
-      : "Exibindo todas as datas";
-    resumo.textContent = `${interval} · ${sales.length} ${sales.length === 1 ? "venda" : "vendas"}`;
-  }
+  $("listaVendas").innerHTML = rows.join("") || `<tr><td colspan="5">Nenhuma venda encontrada para o período selecionado.</td></tr>`;
+  const period = start || end
+    ? `Período: ${start ? formatSaleDate(start) : "início"} a ${end ? formatSaleDate(end) : "hoje"}`
+    : "Exibindo todas as vendas";
+  $("resumoPeriodo").textContent = `${period} · ${sales.length} ${sales.length === 1 ? "venda" : "vendas"}`;
 }
 
 function renderResult() {
