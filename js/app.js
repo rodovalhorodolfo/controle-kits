@@ -106,10 +106,10 @@ function renderProductSelect() {
     : `<option value="">Nenhum cadastrado</option>`;
 }
 
-function consolidation() {
+function consolidation(sales = state.sales) {
   const direct = {};
   const inside = {};
-  for (const v of state.sales) {
+  for (const v of sales) {
     const q = Number(v.quantidade) || 0;
     if (v.tipo === "item") {
       direct[v.produto] = (direct[v.produto] || 0) + q;
@@ -172,57 +172,48 @@ function renderKits() {
   $("listaKits").innerHTML = html || `<div class="muted">Nenhum kit cadastrado.</div>`;
 }
 
-function formatSaleDate(value) {
-  const raw = String(value || "");
-  const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  return match ? `${match[3]}/${match[2]}/${match[1]}` : raw;
-}
-
 function renderSales() {
-  const start = $("data_ini")?.value || "";
-  const end = $("data_fim")?.value || "";
-
-  let sales = [...state.sales].filter(x => {
-    const date = String(x.data || "");
-    return (!start || date >= start) && (!end || date <= end);
-  }).sort((a,b) => {
+  const sales = [...state.sales].sort((a,b) => {
     const d = String(b.data).localeCompare(String(a.data));
     return d || String(b.created_at || "").localeCompare(String(a.created_at || ""));
   });
-
-  const rows = [];
-  let currentDate = null;
-  for (const sale of sales) {
-    if (sale.data !== currentDate) {
-      currentDate = sale.data;
-      const count = sales.filter(x => x.data === currentDate).length;
-      rows.push(`<tr class="sales-date-group"><td colspan="5">${esc(formatSaleDate(currentDate))} <span>${count} ${count === 1 ? "venda" : "vendas"}</span></td></tr>`);
-    }
-    rows.push(`<tr>
-      <td>${esc(formatSaleDate(sale.data))}</td>
-      <td>${esc(sale.produto)}</td>
-      <td>${sale.tipo === "kit" ? "Kit" : "Item"}</td>
-      <td class="num">${sale.quantidade}</td>
-      <td><button class="danger" data-delete-sale="${esc(sale.id)}">Excluir</button></td>
-    </tr>`);
-  }
-
-  $("listaVendas").innerHTML = rows.join("") || `<tr><td colspan="5">Nenhuma venda encontrada para o período selecionado.</td></tr>`;
-  const period = start || end
-    ? `Período: ${start ? formatSaleDate(start) : "início"} a ${end ? formatSaleDate(end) : "hoje"}`
-    : "Exibindo todas as vendas";
-  $("resumoPeriodo").textContent = `${period} · ${sales.length} ${sales.length === 1 ? "venda" : "vendas"}`;
+  $("listaVendas").innerHTML = sales.map(x => `
+    <tr>
+      <td>${esc(x.data)}</td>
+      <td>${esc(x.produto)}</td>
+      <td>${x.tipo === "kit" ? "Kit" : "Item"}</td>
+      <td class="num">${x.quantidade}</td>
+      <td><button class="danger" data-delete-sale="${esc(x.id)}">Excluir</button></td>
+    </tr>`).join("") || `<tr><td colspan="5">Nenhuma venda registrada.</td></tr>`;
 }
 
 function renderResult() {
-  const c = consolidation();
+  const start = $("data_ini")?.value || "";
+  const end = $("data_fim")?.value || "";
+
+  const filteredSales = state.sales.filter(sale => {
+    const date = String(sale.data || "");
+    return (!start || date >= start) && (!end || date <= end);
+  });
+
+  const c = consolidation(filteredSales);
   $("resultadoItens").innerHTML = c.map(x => `
     <tr><td>${esc(x.item)}</td><td class="num">${x.direct}</td><td class="num">${x.inside}</td><td class="num"><b>${x.total}</b></td></tr>
-  `).join("") || `<tr><td colspan="4">Nenhum item vendido.</td></tr>`;
-  $("totalVendas").textContent = state.sales.length;
-  $("totalKits").textContent = state.sales.filter(x => x.tipo === "kit")
+  `).join("") || `<tr><td colspan="4">Nenhum item vendido no período selecionado.</td></tr>`;
+
+  $("totalVendas").textContent = filteredSales.length;
+  $("totalKits").textContent = filteredSales.filter(x => x.tipo === "kit")
     .reduce((s,x) => s + Number(x.quantidade || 0), 0);
   $("totalItens").textContent = c.reduce((s,x) => s + x.total, 0);
+
+  const formatDate = value => {
+    const m = String(value || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    return m ? `${m[3]}/${m[2]}/${m[1]}` : value;
+  };
+  const period = start || end
+    ? `Período: ${start ? formatDate(start) : "início"} a ${end ? formatDate(end) : "sem limite"}`
+    : "Exibindo todos os períodos";
+  $("resumoPeriodo").textContent = `${period} · ${filteredSales.length} ${filteredSales.length === 1 ? "venda" : "vendas"}`;
 }
 
 function render() {
@@ -625,11 +616,11 @@ async function init() {
     $("kitAction").onclick = () => novoKitMode ? createKitWithFirstItem() : addItemToKit;
     $("addVenda").onclick = registerSale;
     $("limparVendas").onclick = clearSales;
-    $("aplicarPeriodo").onclick = renderSales;
+    $("aplicarPeriodo").onclick = renderResult;
     $("limparPeriodo").onclick = () => {
       $("data_ini").value = "";
       $("data_fim").value = "";
-      renderSales();
+      renderResult();
     };
     $("sincronizar").onclick = syncNow;
     $("exportar").onclick = exportBackup;
