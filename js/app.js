@@ -272,6 +272,7 @@ async function registerItem() {
     await local.put("items", row);
     $("novoItemNome").value = "";
     render();
+    setKitMode(novoKitMode);
     showMsg("msgItem", "Item cadastrado.");
   } catch (e) {
     showMsg("msgItem", e.message || "Erro ao cadastrar item.", false);
@@ -286,6 +287,7 @@ async function toggleItem(id) {
     state.items = state.items.map(x => x.id === id ? row : x);
     await local.put("items", row);
     render();
+    setKitMode(novoKitMode);
   } catch (e) {
     showMsg("msgItem", e.message || "Erro ao alterar item.", false);
   }
@@ -613,7 +615,7 @@ async function init() {
     $("tipoVenda").onchange = renderProductSelect;
     $("addItem").onclick = registerItem;
     $("novoKitToggle").onclick = () => setKitMode(!novoKitMode);
-    $("kitAction").onclick = () => novoKitMode ? createKitWithFirstItem() : addItemToKit;
+    $("kitAction").onclick = () => novoKitMode ? createKitWithFirstItem() : addItemToKit();
     $("addVenda").onclick = registerSale;
     $("limparVendas").onclick = clearSales;
     $("aplicarPeriodo").onclick = renderResult;
